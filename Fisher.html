@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Fisher Score Demo</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f8f9fa;
+            margin: 0;
+            padding: 30px;
+            color: #333;
+        }
+        h2 { margin-bottom: 5px; }
+        p.subtitle { color: #666; margin-bottom: 20px; }
+        .canvas-container {
+            position: relative;
+            background: white;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid #e9ecef;
+        }
+        canvas { display: block; cursor: crosshair; }
+        .controls {
+            margin-top: 25px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            align-items: center;
+            background: white;
+            padding: 20px 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            width: 600px;
+            box-sizing: border-box;
+            border: 1px solid #e9ecef;
+        }
+        .slider-group { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+        .slider-group label { font-size: 14px; font-weight: 600; color: #495057; }
+        input[type="range"] { width: 100%; cursor: pointer; }
+        button {
+            padding: 12px 24px;
+            background-color: #2b8a3e;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            width: 100%;
+        }
+        button:hover { background-color: #237032; }
+        .metric-card {
+            width: 100%;
+            text-align: center;
+            padding: 15px;
+            background: #e8f5e9;
+            border-radius: 8px;
+            border: 1px solid #c8e6c9;
+            font-size: 18px;
+            font-family: monospace;
+            font-weight: bold;
+            color: #2e7d32;
+        }
+        .legend { display: flex; gap: 15px; font-size: 13px; margin-top: 10px; }
+        .legend-item { display: flex; align-items: center; gap: 5px; }
+        .color-box { width: 12px; height: 12px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+    <h2>Fisher Score</h2>
+    <p class="subtitle">Global-Aware Topology Alignment Visualization</p>
+
+    <div class="canvas-container">
+        <canvas id="simCanvas" width="600" height="600"></canvas>
+    </div>
+
+    <div class="legend">
+        <div class="legend-item"><div class="color-box" style="background: rgba(43, 138, 62, 0.2); border: 2px solid #2b8a3e;"></div> 真实图流形 (Real Data)</div>
+        <div class="legend-item"><div class="color-box" style="background: rgba(223, 113, 27, 0.2); border: 2px solid #e85d04;"></div> 生成分布 (Generated)</div>
+        <div class="legend-item"><span style="color: #2b8a3e; font-weight: bold;">→</span> Real Score Field</div>
+        <div class="legend-item"><span style="color: #e85d04; font-weight: bold;">→</span> Generated Score Field</div>
+    </div>
+
+    <div class="controls">
+        <div class="slider-group">
+            <label>生成模型 X 坐标: <span id="valX">150</span></label>
+            <input type="range" id="genX" min="50" max="550" value="150">
+        </div>
+        <div class="slider-group">
+            <label>生成模型 Y 坐标: <span id="valY">450</span></label>
+            <input type="range" id="genY" min="50" max="550" value="450">
+        </div>
+        
+        <div class="metric-card" id="metric">Fisher Divergence Error: 0.000</div>
+        
+        <button id="optimizeBtn">模拟 Score Distillation (Minimize Divergence)</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+        const genXSlider = document.getElementById('genX');
+        const genYSlider = document.getElementById('genY');
+        const valXDisplay = document.getElementById('valX');
+        const valYDisplay = document.getElementById('valY');
+        const metricDisplay = document.getElementById('metric');
+        const optimizeBtn = document.getElementById('optimizeBtn');
+
+        // Physics/Math Parameters
+        const sigma = 70; // Standard deviation for KDE
+        const var_inv = 1 / (sigma * sigma);
+        const realMu = { x: 300, y: 300 }; // Target global topology
+        let genMu = { x: parseInt(genXSlider.value), y: parseInt(genYSlider.value) };
+        let optimizing = false;
+
+        // Vector Field Grid Config
+        const gridSize = 40;
+        const arrowScale = 800; // Scaling factor for visual arrows
+
+        // Gaussian Density Calculation
+        function gaussianDensity(x, y, muX, muY) {
+            const dx = x - muX;
+            const dy = y - muY;
+            return Math.exp(-0.5 * (dx*dx + dy*dy) * var_inv);
+        }
+
+        // Score Function (Gradient of log p)
+        // Score = \nabla log p(x) = -(x - mu) / sigma^2
+        function getScore(x, y, muX, muY) {
+            return {
+                dx: -(x - muX) * var_inv,
+                dy: -(y - muY) * var_inv
+            };
+        }
+
+        function drawDensityContours(muX, muY, colorRGB) {
+            ctx.lineWidth = 2;
+            for (let i = 1; i <= 3; i++) {
+                ctx.beginPath();
+                ctx.arc(muX, muY, sigma * i * 0.8, 0, Math.PI * 2);
+                ctx.strokeStyle = `rgba(${colorRGB}, ${1 - i*0.25})`;
+                ctx.fillStyle = `rgba(${colorRGB}, 0.05)`;
+                ctx.fill();
+                ctx.stroke();
+            }
+            // Center point
+            ctx.beginPath();
+            ctx.arc(muX, muY, 5, 0, Math.PI * 2);
+            ctx.fillStyle = `rgb(${colorRGB})`;
+            ctx.fill();
+        }
+
+        function drawArrow(fromX, fromY, vecX, vecY, color) {
+            const headlen = 6;
+            const toX = fromX + vecX * arrowScale;
+            const toY = fromY + vecY * arrowScale;
+            
+            // Limit max length for cleaner visualization
+            const len = Math.sqrt((toX-fromX)**2 + (toY-fromY)**2);
+            if (len < 1) return; // don't draw tiny arrows
+            
+            const angle = Math.atan2(toY - fromY, toX - fromX);
+
+            ctx.beginPath();
+            ctx.moveTo(fromX, fromY);
+            ctx.lineTo(toX, toY);
+            ctx.lineTo(toX - headlen * Math.cos(angle - Math.PI / 6), toY - headlen * Math.sin(angle - Math.PI / 6));
+            ctx.moveTo(toX, toY);
+            ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        }
+
+        function calculateFisherDivergence() {
+            let divergence = 0;
+            let normFactor = 0;
+            
+            // Integrate over the canvas space
+            for (let x = 0; x < canvas.width; x += 15) {
+                for (let y = 0; y < canvas.height; y += 15) {
+                    const p_real = gaussianDensity(x, y, realMu.x, realMu.y);
+                    const scoreReal = getScore(x, y, realMu.x, realMu.y);
+                    const scoreGen = getScore(x, y, genMu.x, genMu.y);
+                    
+                    // Squared L2 norm of the difference
+                    const diffSq = Math.pow(scoreReal.dx - scoreGen.dx, 2) + Math.pow(scoreReal.dy - scoreGen.dy, 2);
+                    
+                    // Expectation over p_real
+                    divergence += p_real * diffSq;
+                    normFactor += p_real;
+                }
+            }
+            return (divergence / normFactor) * 10000; // Scaled for readability
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Real Data Distribution (Global Topology)
+            drawDensityContours(realMu.x, realMu.y, '43, 138, 62'); // Greenish
+
+            // Draw Generated Data Distribution
+            drawDensityContours(genMu.x, genMu.y, '232, 93, 4'); // Orangey
+
+            // Draw Vector Fields (Scores)
+            for (let x = gridSize/2; x < canvas.width; x += gridSize) {
+                for (let y = gridSize/2; y < canvas.height; y += gridSize) {
+                    const scoreReal = getScore(x, y, realMu.x, realMu.y);
+                    const scoreGen = getScore(x, y, genMu.x, genMu.y);
+
+                    // Fade arrows that are far from their distributions
+                    const p_real = gaussianDensity(x, y, realMu.x, realMu.y);
+                    const p_gen = gaussianDensity(x, y, genMu.x, genMu.y);
+
+                    if (p_real > 0.05) {
+                        drawArrow(x, y, scoreReal.dx, scoreReal.dy, `rgba(43, 138, 62, ${Math.min(1, p_real*3)})`);
+                    }
+                    if (p_gen > 0.05) {
+                        drawArrow(x, y, scoreGen.dx, scoreGen.dy, `rgba(232, 93, 4, ${Math.min(1, p_gen*3)})`);
+                    }
+                }
+            }
+
+            // Update Metric
+            const fd = calculateFisherDivergence();
+            metricDisplay.innerText = `Fisher Divergence Error: ${fd.toFixed(3)}`;
+            
+            // Visual feedback on metric
+            if (fd < 0.1) {
+                metricDisplay.style.backgroundColor = '#c8e6c9';
+                metricDisplay.style.color = '#1b5e20';
+            } else {
+                metricDisplay.style.backgroundColor = '#ffebee';
+                metricDisplay.style.color = '#c62828';
+            }
+        }
+
+        // Animation Loop for Optimization
+        function animateOptimization() {
+            if (!optimizing) return;
+
+            // Gradient descent step (simulating the score matching alignment)
+            const lr = 0.05;
+            const dx = realMu.x - genMu.x;
+            const dy = realMu.y - genMu.y;
+
+            genMu.x += dx * lr;
+            genMu.y += dy * lr;
+
+            // Update UI sliders
+            genXSlider.value = genMu.x;
+            genYSlider.value = genMu.y;
+            valXDisplay.innerText = Math.round(genMu.x);
+            valYDisplay.innerText = Math.round(genMu.y);
+
+            render();
+
+            // Stop condition
+            if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+                requestAnimationFrame(animateOptimization);
+            } else {
+                optimizing = false;
+                optimizeBtn.innerText = "模拟 Score Distillation (Minimize Divergence)";
+                optimizeBtn.style.backgroundColor = "#2b8a3e";
+            }
+        }
+
+        // Event Listeners
+        genXSlider.addEventListener('input', (e) => {
+            optimizing = false;
+            genMu.x = parseInt(e.target.value);
+            valXDisplay.innerText = genMu.x;
+            render();
+        });
+
+        genYSlider.addEventListener('input', (e) => {
+            optimizing = false;
+            genMu.y = parseInt(e.target.value);
+            valYDisplay.innerText = genMu.y;
+            render();
+        });
+
+        optimizeBtn.addEventListener('click', () => {
+            if (!optimizing) {
+                optimizing = true;
+                optimizeBtn.innerText = "正在对齐全局流形...";
+                optimizeBtn.style.backgroundColor = "#e85d04";
+                animateOptimization();
+            }
+        });
+
+        // Initial Render
+        render();
+    </script>
+</body>
+</html>
