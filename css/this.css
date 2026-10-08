@@ -1,0 +1,34 @@
+h1 { 
+    font-size: 2em;
+}
+
+a{
+	color:#000000;
+	text-decoration:none;
+	cursor:pointer;
+	border:0;
+	outline:0
+	}
+a:visited{
+	color:#5b5a5e
+	}
+a:hover{
+	color:#ea4335
+	}
+details,summary{outline:0}
+body{font-size:16px;font-family:Georgia,serif;color:#333;background:#f6f6f6 ;margin:0;padding:0;text-align:center}
+article{
+	width:900px;
+	background:white;
+	text-align:left;
+	margin-left:auto;
+	margin-right:auto;
+	margin-top:auto;
+	margin-bottom:auto;
+	padding:60px;
+	border-radius:20px;
+	box-shadow:2px 2px 2px #bbb}
+/*header *{margin:0;padding:0;font-weight:normal}header div{float:left}header div h1{font-size:60px;line-height:60px;margin-top:10px}header div h1 small{display:none}header div h2{font-size:17px;line-height:20px}header aside{float:right}header aside section{float:right;margin-top:10px;text-align:right;line-height:14px}header aside h1{font-size:12px}header aside h1 small{font-size:12px;display:block}header aside h2{font-size:12px;font-weight:bold}header nav{clear:both;text-align:center;margin:0 auto;padding:20px 0}header nav ul{list-style:none;border-top:1px solid gray;border-bottom:1px solid gray;padding:5px 0}header nav ul li{display:inline;margin:0 5px}article section{clear:both;line-height:30px}section h1{font-size:28px}section section h1{font-size:24px}label{background-color:orange;border-radius:1000px;box-sizing:border-box;color:white;display:inline;font-family:'Helvetica Neue',Helvetica,Helvetica,Arial,sans-serif;font-size:12px;font-weight:normal;line-height:12px;margin:0;padding:1px 7px 1px 7px;text-align:center;text-decoration:none;white-space:nowrap;width:auto}.liame{color:blue;list-style:none;display:inline;margin:0;padding:0}.liame li{display:inline}.liame li img{display:none}.ribbon{position:absolute;top:0;right:0;border:0}ol li em{font-style:normal;font-weight:bold}*/
+header > h3 { display: inline-block; }
+header span { margin-left: 20px; }
+

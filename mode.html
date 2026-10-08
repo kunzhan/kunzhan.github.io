@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MSE 模态坍塌：双峰 GMM 推导与演示</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #ffffff;
+  --bg2: #f5f4f0;
+  --bg3: #eceae4;
+  --text: #1a1a18;
+  --text2: #5a5a56;
+  --text3: #8a8a84;
+  --border: rgba(0,0,0,0.1);
+  --border2: rgba(0,0,0,0.18);
+  --accent-amber: #EF9F27;
+  --accent-green: #1D9E75;
+  --accent-blue: #3266ad;
+  --accent-red: #E8593C;
+  --radius: 8px;
+  --radius-lg: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1e1e1c;
+    --bg2: #2a2a28;
+    --bg3: #333330;
+    --text: #e8e6de;
+    --text2: #a0a09a;
+    --text3: #70706a;
+    --border: rgba(255,255,255,0.1);
+    --border2: rgba(255,255,255,0.18);
+  }
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.7;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+}
+
+h1 {
+  font-size: 22px;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: var(--text2);
+  margin-bottom: 2.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 0.5px solid var(--border);
+}
+
+.section {
+  padding: 1.5rem 0;
+  border-bottom: 0.5px solid var(--border);
+}
+.section:last-child { border-bottom: none; }
+
+h2 { font-size: 16px; font-weight: 500; margin-bottom: 0.75rem; }
+h3 { font-size: 13px; font-weight: 500; color: var(--text2); margin-bottom: 0.5rem; }
+
+p { font-size: 14px; color: var(--text2); margin-bottom: 0.5rem; }
+
+.math-block {
+  background: var(--bg2);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 13px;
+  line-height: 2;
+  margin: 0.75rem 0;
+  overflow-x: auto;
+  white-space: pre;
+  color: var(--text);
+}
+
+.math-inline {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+  background: var(--bg2);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.annotation {
+  font-size: 12px;
+  color: var(--text3);
+  margin: 0.4rem 0 0.4rem 1rem;
+  line-height: 1.5;
+}
+
+.highlight-box {
+  border-left: 3px solid var(--accent-amber);
+  background: var(--bg2);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.key-result {
+  border-left: 3px solid var(--accent-green);
+  background: var(--bg2);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.step-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 0.75rem 0;
+}
+@media (max-width: 520px) { .step-grid { grid-template-columns: 1fr; } }
+
+.step-card {
+  background: var(--bg2);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.step-num {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+/* Controls */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  margin: 0.75rem 0;
+  font-size: 13px;
+  color: var(--text2);
+}
+.controls label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.controls input[type=range] {
+  width: 120px;
+  accent-color: var(--accent-blue);
+}
+.val {
+  min-width: 36px;
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  border-radius: var(--radius);
+  margin-top: 8px;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--text2);
+  margin-top: 10px;
+}
+.legend-item { display: flex; align-items: center; gap: 5px; }
+.swatch { width: 22px; height: 3px; border-radius: 2px; }
+.swatch-dot { width: 10px; height: 10px; border-radius: 50%; }
+.swatch-dashed {
+  width: 22px; height: 3px;
+  background: repeating-linear-gradient(
+    to right,
+    var(--accent-amber) 0, var(--accent-amber) 5px,
+    transparent 5px, transparent 9px
+  );
+}
+
+#stats {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text2);
+  font-family: monospace;
+  line-height: 2;
+  background: var(--bg2);
+  border-radius: var(--radius);
+  padding: 0.6rem 1rem;
+}
+#stats strong { color: var(--accent-red); }
+</style>
+</head>
+<body>
+
+<h1>MSE 与模态坍塌</h1>
+<p class="subtitle">扩散模型 L2 损失的"条件均值陷阱"——公式推导 + 双峰 GMM 交互演示</p>
+
+<!-- ── 第一步 ── -->
+<div class="section">
+  <h2>第一步：MSE 的最优解是条件期望</h2>
+  <p>扩散模型训练时，给定带噪观测 <span class="math-inline">x_t</span>，用 MSE 拟合干净信号 <span class="math-inline">x_0</span>：</p>
+  <div class="math-block">θ* = argmin_θ  E[ ‖f_θ(x_t, t) − x_0‖² ]
+
+对任意固定 x_t，逐点最小化可得最优解：
+
+        f_θ*(x_t, t)  =  E[x_0 | x_t]</div>
+  <div class="annotation">▸ 这是最小均方误差（MMSE）的标准结论，与模型结构无关——MSE 就是在学条件均值。</div>
+</div>
+
+<!-- ── 第二步 ── -->
+<div class="section">
+  <h2>第二步：一对多映射的本质</h2>
+  <p>前向加噪：</p>
+  <div class="math-block">x_t = √ᾱ_t · x_0 + √(1−ᾱ_t) · ε,   ε ∼ 𝒩(0, I)</div>
+  <p>当 <span class="math-inline">ᾱ_t</span> 较小（噪声大）时，噪声项主导，多个不同的 <span class="math-inline">x_0</span> 都能产生几乎相同的 <span class="math-inline">x_t</span>。
+  此时后验分布 <span class="math-inline">p(x_0 | x_t)</span> 变得模糊、多峰。</p>
+</div>
+
+<!-- ── 第三步 ── -->
+<div class="section">
+  <h2>第三步：具体推导——双峰高斯混合</h2>
+
+  <div class="step-grid">
+    <div class="step-card">
+      <div class="step-num">真实分布</div>
+      p(x₀) = ½ 𝒩(−μ, σ²) + ½ 𝒩(+μ, σ²)<br>
+      <span style="color:var(--text3);font-size:12px">两个等权的高斯峰，关于原点对称</span>
+    </div>
+    <div class="step-card">
+      <div class="step-num">带噪分布</div>
+      x_t | x₀ ∼ 𝒩(√α · x₀, (1−α)·I)<br>
+      <span style="color:var(--text3);font-size:12px">令 α = ᾱ_t（信号保留率）</span>
+    </div>
+  </div>
+
+  <h3>用贝叶斯公式计算后验权重：</h3>
+  <div class="math-block">         p(x_t | x₀=μ_k) · p(x₀=μ_k)
+w_k  =  ─────────────────────────────────────
+              Σⱼ p(x_t | x₀=μⱼ) · p(x₀=μⱼ)
+
+         exp(−(x_t − √α·μ_k)² / (2(1−α)))
+w_k  =  ────────────────────────────────────────
+         Σⱼ exp(−(x_t − √α·μⱼ)² / (2(1−α)))</div>
+
+  <h3>MSE 最优预测（条件均值）：</h3>
+  <div class="math-block">E[x₀ | x_t]  =  w₁(x_t) · (−μ) + w₂(x_t) · (+μ)</div>
+
+  <div class="highlight-box">
+    <strong>关键情形：x_t ≈ 0（两峰正中间）</strong><br><br>
+    对称性 → w₁ = w₂ = 0.5，因此：<br><br>
+    <span style="font-family:monospace">E[x₀ | x_t≈0]  =  0.5·(−μ) + 0.5·(+μ)  =  <strong>0</strong></span><br><br>
+    但 <strong>x₀ = 0 从来不是真实数据</strong>——它落在两峰之间的低概率空谷里！
+  </div>
+
+  <div class="key-result">
+    <strong>结论（模态坍塌）：</strong> MSE 逼迫模型输出多峰分布的加权均值，
+    这个"均值"可能落在真实数据概率极低的区域。
+    对图数据而言，即是拓扑上无意义的"模糊结构"。
+  </div>
+</div>
+
+<!-- ── 交互演示 ── -->
+<div class="section">
+  <h2>交互演示：拖动参数，观察条件均值如何坍塌</h2>
+
+  <div class="controls">
+    <label>峰值位置 μ
+      <input type="range" id="mu" min="0.5" max="3" step="0.1" value="1.5">
+      <span class="val" id="mu-v">1.5</span>
+    </label>
+    <label>信号保留率 α
+      <input type="range" id="alpha" min="0.02" max="0.99" step="0.01" value="0.50">
+      <span class="val" id="alpha-v">0.50</span>
+    </label>
+    <label>当前噪声点 x_t
+      <input type="range" id="xt" min="-4" max="4" step="0.05" value="0.0">
+      <span class="val" id="xt-v">0.00</span>
+    </label>
+  </div>
+
+  <canvas id="cvs" height="300"></canvas>
+
+  <div class="legend">
+    <div class="legend-item"><div class="swatch" style="background:var(--accent-blue)"></div>后验 p(x₀|x_t)</div>
+    <div class="legend-item"><div class="swatch" style="background:var(--accent-red);opacity:0.7"></div>真实分布 p(x₀)</div>
+    <div class="legend-item"><div class="swatch-dashed"></div>MSE 预测（条件均值）</div>
+    <div class="legend-item"><div class="swatch-dot" style="background:var(--accent-green)"></div>当前 x_t 位置</div>
+  </div>
+
+  <div id="stats"></div>
+</div>
+
+<!-- ── 直觉总结 ── -->
+<div class="section">
+  <h2>直觉总结</h2>
+  <p>
+    蓝色曲线（后验）有两个峰。MSE 的最优解是这两个峰的加权平均（黄色虚线）。
+    当 x_t 处于两峰中间时，这个平均值恰好落在低密度空谷里，
+    <strong>在真实数据分布中概率极低</strong>。
+  </p>
+  <p style="margin-top:0.5rem">
+    把"信号保留率 α"拖到 0.3–0.6、噪声点 x_t 拖到 0 附近，
+    底部面板会显示 MSE 预测比真实峰值低多少倍——这正是 <strong>CFDA 边际正则化</strong>的动机：
+    对预测边际分布 p_θ(x̂₀) 加 Fisher 散度惩罚，让预测样本落在高密度区，
+    而非被 MSE 拉向无意义的"均值空洞"。
+  </p>
+</div>
+
+<script>
+(function() {
+  const cvs = document.getElementById('cvs');
+  const ctx = cvs.getContext('2d');
+
+  function gauss(x, mu, sigma) {
+    return Math.exp(-0.5 * ((x - mu) / sigma) ** 2) / (sigma * Math.sqrt(2 * Math.PI));
+  }
+
+  function draw() {
+    const mu    = parseFloat(document.getElementById('mu').value);
+    const alpha = parseFloat(document.getElementById('alpha').value);
+    const xt    = parseFloat(document.getElementById('xt').value);
+
+    document.getElementById('mu-v').textContent    = mu.toFixed(1);
+    document.getElementById('alpha-v').textContent = alpha.toFixed(2);
+    document.getElementById('xt-v').textContent    = xt.toFixed(2);
+
+    const W = cvs.parentElement.clientWidth || 680;
+    cvs.width  = W;
+    cvs.height = 300;
+
+    const pad = { l: 44, r: 20, t: 24, b: 44 };
+    const plotW = W - pad.l - pad.r;
+    const plotH = cvs.height - pad.t - pad.b;
+
+    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    const xMin = -5, xMax = 5;
+    const toX = x => pad.l + (x - xMin) / (xMax - xMin) * plotW;
+    const toY = y => pad.t + plotH - y * plotH;
+
+    ctx.clearRect(0, 0, W, cvs.height);
+
+    // Grid lines
+    const gridCol = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+    ctx.strokeStyle = gridCol;
+    ctx.lineWidth = 0.5;
+    for (let v = -4; v <= 4; v += 2) {
+      ctx.beginPath();
+      ctx.moveTo(toX(v), pad.t);
+      ctx.lineTo(toX(v), pad.t + plotH);
+      ctx.stroke();
+    }
+
+    // Axes
+    const axCol = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)';
+    ctx.strokeStyle = axCol;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(pad.l, pad.t + plotH); ctx.lineTo(pad.l + plotW, pad.t + plotH);
+    ctx.moveTo(pad.l, pad.t);         ctx.lineTo(pad.l, pad.t + plotH);
+    ctx.stroke();
+
+    // Tick labels
+    const tickCol = isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.4)';
+    ctx.fillStyle = tickCol;
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    for (let v = -4; v <= 4; v += 2) {
+      ctx.fillText(v, toX(v), pad.t + plotH + 16);
+    }
+    ctx.textAlign = 'right';
+    ctx.font = '11px sans-serif';
+
+    // Compute distributions
+    const N = 400;
+    const xs = Array.from({length: N}, (_, i) => xMin + (xMax - xMin) * i / (N - 1));
+
+    const sigma0 = 0.6;
+    const pTrue = xs.map(x => 0.5 * gauss(x, -mu, sigma0) + 0.5 * gauss(x, mu, sigma0));
+
+    // Posterior parameters (exact Gaussian posterior for each component)
+    const sigmaLik = Math.sqrt(1 - alpha);
+    const like1 = gauss(xt, Math.sqrt(alpha) * (-mu), sigmaLik);
+    const like2 = gauss(xt, Math.sqrt(alpha) * ( mu), sigmaLik);
+    const Z = 0.5 * like1 + 0.5 * like2 + 1e-300;
+
+    const w1 = 0.5 * like1 / Z;
+    const w2 = 0.5 * like2 / Z;
+
+    const invPostVar = 1 / sigma0 ** 2 + alpha / (1 - alpha + 1e-10);
+    const postVar    = 1 / invPostVar;
+    const postStd    = Math.sqrt(postVar);
+
+    const postMu1 = postVar * ((-mu) / sigma0 ** 2 + Math.sqrt(alpha) * xt / (1 - alpha + 1e-10));
+    const postMu2 = postVar * (( mu) / sigma0 ** 2 + Math.sqrt(alpha) * xt / (1 - alpha + 1e-10));
+
+    const pPost = xs.map(x => w1 * gauss(x, postMu1, postStd) + w2 * gauss(x, postMu2, postStd));
+
+    const normF = 0.88 / Math.max(Math.max(...pTrue), Math.max(...pPost));
+
+    // Fill posterior
+    ctx.beginPath();
+    xs.forEach((x, i) => {
+      const cy = toY(pPost[i] * normF);
+      i === 0 ? ctx.moveTo(toX(x), cy) : ctx.lineTo(toX(x), cy);
+    });
+    ctx.lineTo(toX(xMax), toY(0));
+    ctx.lineTo(toX(xMin), toY(0));
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(50,102,173,0.12)';
+    ctx.fill();
+
+    // Posterior curve
+    ctx.beginPath();
+    xs.forEach((x, i) => {
+      const cy = toY(pPost[i] * normF);
+      i === 0 ? ctx.moveTo(toX(x), cy) : ctx.lineTo(toX(x), cy);
+    });
+    ctx.strokeStyle = '#3266ad';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([]);
+    ctx.stroke();
+
+    // True distribution
+    ctx.beginPath();
+    xs.forEach((x, i) => {
+      const cy = toY(pTrue[i] * normF);
+      i === 0 ? ctx.moveTo(toX(x), cy) : ctx.lineTo(toX(x), cy);
+    });
+    ctx.strokeStyle = '#E8593C';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Conditional mean
+    const condMean = w1 * postMu1 + w2 * postMu2;
+    const cmx = toX(condMean);
+    ctx.beginPath();
+    ctx.moveTo(cmx, pad.t);
+    ctx.lineTo(cmx, pad.t + plotH);
+    ctx.strokeStyle = '#EF9F27';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([7, 5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Label above conditional mean line
+    ctx.fillStyle = '#EF9F27';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('MSE预测', cmx, pad.t + 13);
+
+    // True mode peaks (faint vertical marks)
+    [-mu, mu].forEach(pk => {
+      ctx.beginPath();
+      ctx.moveTo(toX(pk), pad.t + plotH - 8);
+      ctx.lineTo(toX(pk), pad.t + plotH);
+      ctx.strokeStyle = '#E8593C';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    });
+
+    // x_t dot
+    ctx.beginPath();
+    ctx.arc(toX(xt), pad.t + plotH, 6, 0, 2 * Math.PI);
+    ctx.fillStyle = '#1D9E75';
+    ctx.fill();
+    ctx.strokeStyle = isDark ? '#e8e6de' : '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Stats panel
+    const trueAtMean = 0.5 * gauss(condMean, -mu, sigma0) + 0.5 * gauss(condMean, mu, sigma0);
+    const trueAtMode = 0.5 * gauss(mu, mu, sigma0);
+    const ratio      = trueAtMode / Math.max(trueAtMean, 1e-10);
+    const collapsed  = Math.abs(condMean) < 0.5 * mu && Math.abs(condMean + mu) > 0.25 && Math.abs(condMean - mu) > 0.25;
+
+    document.getElementById('stats').innerHTML =
+      `后验权重：w₁(x₀=−${mu.toFixed(1)}) = ${(w1*100).toFixed(1)}%，w₂(x₀=+${mu.toFixed(1)}) = ${(w2*100).toFixed(1)}%\n` +
+      `MSE 条件均值 = ${condMean.toFixed(3)}\n` +
+      `p(x₀ = MSE预测) = ${trueAtMean.toFixed(5)}   vs   p(x₀ = 真实峰值±μ) = ${trueAtMode.toFixed(5)}\n` +
+      (collapsed
+        ? `<strong>⚠ 模态坍塌！条件均值落在空谷，真实峰值概率高出 ${ratio.toFixed(0)}×</strong>`
+        : `此时 x_t 偏向一侧，后验集中于单峰，MSE 预测相对合理。`);
+  }
+
+  ['mu','alpha','xt'].forEach(id => document.getElementById(id).addEventListener('input', draw));
+  window.addEventListener('resize', draw);
+  draw();
+})();
+</script>
+</body>
+</html>
